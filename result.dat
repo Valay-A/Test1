@@ -1,0 +1,386 @@
+#INFO: **** input file is /home/valay/RM_Lab/bifurcation_cc/CC_pt8/trans_mo.py ****
+
+                   ##----------------------------------------------------------------------------------------------------------------##
+                                   
+                                           # Routine to calculate Hatree-Fock energy and verify with pyscf routine #
+                                                # Author: Soumi Tribedi, Anish Chakraborty, Rahul Maitra #
+                                                                  # Date - Dec, 2018 # 
+
+                   ##----------------------------------------------------------------------------------------------------------------##
+
+##--------------------------------------------------##
+          #Import important modules#
+##--------------------------------------------------##
+
+import gc
+import numpy as np
+import pyscf
+import inp
+import time
+from pyscf import gto, scf, cc
+from pyscf.cc import ccsd_t
+from pyscf import symm
+t1= time.time()
+mol = inp.mol
+
+##--------------------------------------------------------------##
+          #Import different parameters from pyscf#
+##--------------------------------------------------------------##
+
+# Obtain the number of atomic orbitals in the basis set
+nao = mol.nao_nr()
+# Obtain the number of electrons
+nelec = mol.nelectron
+# Compute nuclear repulsion energy
+enuc = mol.energy_nuc()
+# Compute one-electron kinetic integrals
+T = mol.intor('cint1e_kin_sph')
+# Compute one-electron potential integrals
+V = mol.intor('cint1e_nuc_sph')
+# Compute two-electron repulsion integrals (Chemists' notation)
+v2e = mol.intor('cint2e_sph').reshape((nao,)*4)
+
+##--------------------------------------------------------------##
+                ####  Hartree-Fock pyscf  ####
+##--------------------------------------------------------------##
+
+mf = scf.RHF(mol).run()
+E_hf = mf.e_tot
+hf_mo_E = mf.mo_energy
+hf_mo_coeff = mf.mo_coeff
+Fock_mo = np.zeros((nao,nao))
+
+##--------------------------------------------------------------##
+             #Orbital symmetry of the molecule#
+##--------------------------------------------------------------##
+
+orb_symm = []
+mo = symm.symmetrize_space(mol, mf.mo_coeff)
+#orb_symm = symm.label_orb_symm_num(mol, mol.irrep_name, mol.symm_orb, mo)
+
+
+##--------------------------------------------------------------##
+             #Set up initial Fock matrix#
+##--------------------------------------------------------------##
+
+#Fock = T + V 
+Fock = np.add(T,V)
+n = nelec/2
+
+##--------------------------------------------------------------##
+      #Transform the 1 electron integral to MO basis#
+##--------------------------------------------------------------##
+
+oneelecint_mo = np.einsum('ab,ac,cd->bd',hf_mo_coeff,Fock,hf_mo_coeff)
+
+##--------------------------------------------------------------##
+         #Transform 2 electron integral to MO Basis#
+##--------------------------------------------------------------##
+
+twoelecint_1 = np.einsum('zs,wxyz->wxys',hf_mo_coeff,v2e)
+twoelecint_2 = np.einsum('yr,wxys->wxrs',hf_mo_coeff,twoelecint_1)
+twoelecint_3 = np.einsum('xq,wxrs->wqrs',hf_mo_coeff,twoelecint_2)
+twoelecint_mo = np.einsum('wp,wqrs->pqrs',hf_mo_coeff,twoelecint_3)
+twoelecint_1 = None
+twoelecint_2 = None
+twoelecint_3 = None
+
+##--------------------------------------------------------------##
+                  #Verify integrals#
+##--------------------------------------------------------------##
+
+E_scf_mo_1 = 0
+E_scf_mo_2 = 0
+E_scf_mo_3 = 0
+
+for i in range(0,n):
+    #print oneelecint_mo.shape
+    E_scf_mo_1 += oneelecint_mo[i][i]   
+#E_scf_mo_1 +=np.trace(oneelecint_mo)
+#E_scf_mo_1 += np.trace(oneelecint_mo)
+
+for i in range(0,n):
+  for j in range(0,n):
+    E_scf_mo_2 += 2*twoelecint_mo[i][i][j][j] - twoelecint_mo[i][j][i][j]  
+
+Escf_mo = 2*E_scf_mo_1 + E_scf_mo_2 + enuc
+
+##--------------------------------------------------------------##
+              #Verify with pyscf HF routine#
+##--------------------------------------------------------------##
+
+def check_mo():
+  if abs(Escf_mo - E_hf)<= 1E-6 :
+    print "MO conversion successful"
+  return
+print Escf_mo,E_hf
+print hf_mo_E
+check_mo()
+
+##--------------------------------------------------------------##
+                    #Create Fock matrix#
+##--------------------------------------------------------------##
+
+for i in range(0,nao):
+  Fock_mo[i,i] = hf_mo_E[i]
+
+gc.collect()
+t2=time.time()
+print t2-t1
+                          ##-----------------------------------------------------------------------------------------------------------------------##
+                                                                                    #THE END#
+                          ##-----------------------------------------------------------------------------------------------------------------------##
+
+#INFO: ******************** input file end ********************
+
+
+System: ('Linux', 'ZBook', '4.4.0-17763-Microsoft', '#864-Microsoft Thu Nov 07 15:22:00 PST 2019', 'x86_64', 'x86_64')  Threads 8
+Python 2.7.17 (default, Nov  7 2019, 10:07:09) 
+[GCC 7.4.0]
+numpy 1.16.6  scipy 1.2.3
+Date: Thu Mar 26 04:35:56 2020
+PySCF version 1.7.1
+PySCF path  /home/valay/.local/lib/python2.7/site-packages/pyscf
+
+[CONFIG] conf_file None
+[INPUT] verbose = 5
+[INPUT] max_memory = 4000 
+[INPUT] num. atoms = 3
+[INPUT] num. electrons = 10
+[INPUT] charge = 0
+[INPUT] spin (= nelec alpha-beta = 2S) = 0
+[INPUT] symmetry C2v subgroup None
+[INPUT] Mole.unit = angstrom
+[INPUT]  1 O      0.000000000000   0.000000000000   0.072290000000 AA    0.000000000000   0.000000000000   0.136608301545 Bohr
+[INPUT]  2 H      1.057980000000   0.000000000000  -0.867460000000 AA    1.999292445267   0.000000000000  -1.639261824015 Bohr
+[INPUT]  3 H     -1.057980000000   0.000000000000  -0.867460000000 AA   -1.999292445267   0.000000000000  -1.639261824015 Bohr
+[INPUT] ---------------- BASIS SET ---------------- 
+[INPUT] l, kappa, [nprim/nctr], expnt,             c_1 c_2 ...
+[INPUT] H
+[INPUT] 0    0    [3    /1   ]  13.01             0.019685
+                                1.962             0.137977
+                                0.4446            0.478148
+[INPUT] 0    0    [1    /1   ]  0.122                1
+[INPUT] 1    0    [1    /1   ]  0.727                1
+[INPUT] O
+[INPUT] 0    0    [8    /2   ]  11720             0.00071 -0.00016
+                                1759              0.00547 -0.001263
+                                400.8             0.027837 -0.006267
+                                113.7             0.1048 -0.025716
+                                37.03             0.283062 -0.070924
+                                13.27             0.448719 -0.165411
+                                5.025             0.270952 -0.116955
+                                1.013             0.015458 0.557368
+[INPUT] 0    0    [1    /1   ]  0.3023               1
+[INPUT] 1    0    [3    /1   ]  17.7              0.043018
+                                3.854             0.228913
+                                1.046             0.508728
+[INPUT] 1    0    [1    /1   ]  0.2753               1
+[INPUT] 2    0    [1    /1   ]  1.185                1
+
+nuclear repulsion = 6.23337893506472
+point group symmetry = C2v
+num. orbitals of irrep A1 = 11
+num. orbitals of irrep A2 = 2
+num. orbitals of irrep B1 = 7
+num. orbitals of irrep B2 = 4
+number of shells = 11
+number of NR pGTOs = 40
+number of NR cGTOs = 24
+basis = ccpvdz
+ecp = {}
+CPU time:         1.72
+
+
+******** <class 'pyscf.scf.hf_symm.SymAdaptedRHF'> ********
+method = SymAdaptedRHF-RHF
+initial guess = minao
+damping factor = 0
+level_shift factor = 0
+DIIS = <class 'pyscf.scf.diis.CDIIS'>
+diis_start_cycle = 1
+diis_space = 8
+SCF conv_tol = 1e-09
+SCF conv_tol_grad = None
+SCF max_cycles = 50
+direct_scf = True
+direct_scf_tol = 1e-13
+chkfile to save SCF result = /home/valay/RM_Lab/bifurcation_cc/CC_pt8/tmp1DEHrL
+max_memory 4000 MB (current use 51 MB)
+Freeze 0 electrons in irreps []
+    10 free electrons in irreps A1 A2 B1 B2
+Set gradient conv threshold to 3.16228e-05
+E1 = -116.34460006036718  E_coul = 34.90666688598442
+init E= -75.204554239318
+cond(S) = 34.850560904992804
+    CPU time for initialize scf      2.59 sec, wall time      0.41 sec
+HOMO (B2) = -0.407612698168361  LUMO (A1) = -0.0440492017934063
+irrep_nelec = [6, 0, 2, 2]
+A1 nocc = 3  HOMO = -0.49571743098189  LUMO = -0.0440492017934063
+   mo_energy = [-20.73518571  -1.35039574  -0.49571743  -0.0440492    0.63592187
+   1.13107402   1.46864971   1.58218437   2.11717646   2.95070498
+   3.26619159]
+A2 nocc = 0
+   mo_energy = [1.49105975 2.90833082]
+B1 nocc = 1  HOMO = -0.524418048725291  LUMO = 0.0186853128831634
+   mo_energy = [-0.52441805  0.01868531  0.63328873  1.22650723  1.66982257  1.73616204
+  3.46187219]
+B2 nocc = 1  HOMO = -0.407612698168361  LUMO = 1.08165925145709
+   mo_energy = [-0.4076127   1.08165925  1.63253582  2.90469648]
+E1 = -119.52481925784107  E_coul = 37.559068343458264
+cycle= 1 E= -75.7323719793181  delta_E= -0.528  |g|= 0.593  |ddm|= 1.14
+    CPU time for cycle= 1      0.09 sec, wall time      0.03 sec
+HOMO (B2) = -0.281138537623874  LUMO (A1) = 0.113413474918237
+irrep_nelec = [6, 0, 2, 2]
+A1 nocc = 3  HOMO = -0.372617815667226  LUMO = 0.113413474918237
+   mo_energy = [-20.1722842   -1.03197888  -0.37261782   0.11341347   0.6140367
+   1.27924695   1.56896013   1.64775753   2.24576621   3.25680033
+   3.53749046]
+A2 nocc = 0
+   mo_energy = [1.40889061 3.23238382]
+B1 nocc = 1  HOMO = -0.426620340293212  LUMO = 0.163058391292794
+   mo_energy = [-0.42662034  0.16305839  0.60210385  1.39383076  1.67134807  1.72853078
+  3.7264154 ]
+B2 nocc = 1  HOMO = -0.281138537623874  LUMO = 1.2643913803745
+   mo_energy = [-0.28113854  1.26439138  1.63583132  3.23082111]
+E1 = -115.45525405058565  E_coul = 33.45833998757021
+cycle= 2 E= -75.7635351279507  delta_E= -0.0312  |g|= 0.593  |ddm|= 0.727
+    CPU time for cycle= 2      0.30 sec, wall time      0.04 sec
+HOMO (B2) = -0.480884418095071  LUMO (A1) = 0.068962360243473
+irrep_nelec = [6, 0, 2, 2]
+A1 nocc = 3  HOMO = -0.499671320508901  LUMO = 0.068962360243473
+   mo_energy = [-20.65366482  -1.22093197  -0.49967132   0.06896236   0.6237755
+   1.19804131   1.48223859   1.57962051   2.15061876   3.0530728
+   3.35825325]
+A2 nocc = 0
+   mo_energy = [1.43630279 3.02369925]
+B1 nocc = 1  HOMO = -0.526348163125462  LUMO = 0.117236809706381
+   mo_energy = [-0.52634816  0.11723681  0.61250336  1.29740779  1.63341019  1.71128708
+  3.54481923]
+B2 nocc = 1  HOMO = -0.480884418095071  LUMO = 1.14351987539439
+   mo_energy = [-0.48088442  1.14351988  1.60646159  3.02153013]
+E1 = -117.55566221678944  E_coul = 35.49130577560749
+cycle= 3 E= -75.8309775061172  delta_E= -0.0674  |g|= 0.0474  |ddm|= 0.361
+    CPU time for cycle= 3      1.27 sec, wall time      0.22 sec
+HOMO (B2) = -0.486176708580801  LUMO (A1) = 0.0834900188119221
+irrep_nelec = [6, 0, 2, 2]
+A1 nocc = 3  HOMO = -0.497680557201455  LUMO = 0.0834900188119221
+   mo_energy = [-20.62670404  -1.2170118   -0.49768056   0.08349002   0.63677972
+   1.20285148   1.48837815   1.59597875   2.15993954   3.05812956
+   3.36431659]
+A2 nocc = 0
+   mo_energy = [1.45259746 3.02774783]
+B1 nocc = 1  HOMO = -0.520497766800693  LUMO = 0.132346412471288
+   mo_energy = [-0.52049777  0.13234641  0.62384272  1.30572593  1.64871451  1.72334648
+  3.55187056]
+B2 nocc = 1  HOMO = -0.486176708580801  LUMO = 1.14447809361029
+   mo_energy = [-0.48617671  1.14447809  1.61781815  3.02544566]
+E1 = -117.42955003292757  E_coul = 35.364052046594786
+cycle= 4 E= -75.8321190512681  delta_E= -0.00114  |g|= 0.0135  |ddm|= 0.0494
+    CPU time for cycle= 4      0.98 sec, wall time      0.15 sec
+HOMO (B2) = -0.493070584465722  LUMO (A1) = 0.0837675811450397
+irrep_nelec = [6, 0, 2, 2]
+A1 nocc = 3  HOMO = -0.49817380637781  LUMO = 0.0837675811450397
+   mo_energy = [-20.6265873   -1.21975139  -0.49817381   0.08376758   0.63827467
+   1.20196886   1.48833746   1.59601481   2.15903488   3.05484423
+   3.36168822]
+A2 nocc = 0
+   mo_energy = [1.4548919  3.02434802]
+B1 nocc = 1  HOMO = -0.520083803964111  LUMO = 0.133580743940822
+   mo_energy = [-0.5200838   0.13358074  0.62533633  1.30532274  1.6504715   1.72434443
+  3.54939236]
+B2 nocc = 1  HOMO = -0.493070584465722  LUMO = 1.14015219060971
+   mo_energy = [-0.49307058  1.14015219  1.61889286  3.02197059]
+E1 = -117.41256035682991  E_coul = 35.34695902398538
+cycle= 5 E= -75.8322223977798  delta_E= -0.000103  |g|= 0.0019  |ddm|= 0.0204
+    CPU time for cycle= 5      1.95 sec, wall time      0.32 sec
+HOMO (B2) = -0.493812021748191  LUMO (A1) = 0.0832467517531376
+irrep_nelec = [6, 0, 2, 2]
+A1 nocc = 3  HOMO = -0.498131614116833  LUMO = 0.0832467517531376
+   mo_energy = [-20.6270311   -1.22011167  -0.49813161   0.08324675   0.63800787
+   1.20163116   1.4879626    1.59558624   2.15875614   3.0542731
+   3.36118104]
+A2 nocc = 0
+   mo_energy = [1.45454748 3.02385296]
+B1 nocc = 1  HOMO = -0.519879035124933  LUMO = 0.133147154530856
+   mo_energy = [-0.51987904  0.13314715  0.62510483  1.30504029  1.65011894  1.72395297
+  3.54881123]
+B2 nocc = 1  HOMO = -0.493812021748191  LUMO = 1.13941252360058
+   mo_energy = [-0.49381202  1.13941252  1.61853037  3.02149152]
+E1 = -117.41203314690152  E_coul = 35.346430139674524
+cycle= 6 E= -75.8322240721623  delta_E= -1.67e-06  |g|= 0.000317  |ddm|= 0.00261
+    CPU time for cycle= 6      0.97 sec, wall time      0.15 sec
+HOMO (B2) = -0.493988477989469  LUMO (A1) = 0.0832679669065206
+irrep_nelec = [6, 0, 2, 2]
+A1 nocc = 3  HOMO = -0.498227237284358  LUMO = 0.0832679669065206
+   mo_energy = [-20.62715188  -1.22021962  -0.49822724   0.08326797   0.63803182
+   1.20160239   1.48793513   1.59557871   2.15873407   3.05419372
+   3.36110949]
+A2 nocc = 0
+   mo_energy = [1.45456053 3.0237672 ]
+B1 nocc = 1  HOMO = -0.519943576344097  LUMO = 0.133207613921345
+   mo_energy = [-0.51994358  0.13320761  0.62513018  1.30502025  1.65012995  1.72395162
+  3.5487438 ]
+B2 nocc = 1  HOMO = -0.493988477989469  LUMO = 1.13932509900415
+   mo_energy = [-0.49398848  1.1393251   1.6185221   3.0214093 ]
+E1 = -117.41214326386404  E_coul = 35.34654021283681
+cycle= 7 E= -75.8322241159625  delta_E= -4.38e-08  |g|= 3.99e-05  |ddm|= 0.000434
+    CPU time for cycle= 7      1.08 sec, wall time      0.16 sec
+HOMO (B2) = -0.49399274235034  LUMO (A1) = 0.0832589602978089
+irrep_nelec = [6, 0, 2, 2]
+A1 nocc = 3  HOMO = -0.498221203763602  LUMO = 0.0832589602978089
+   mo_energy = [-20.62714212  -1.22022268  -0.4982212    0.08325896   0.63803616
+   1.20159979   1.48793687   1.59558282   2.15873483   3.05418806
+   3.36110517]
+A2 nocc = 0
+   mo_energy = [1.45457029 3.02376021]
+B1 nocc = 1  HOMO = -0.519923893351587  LUMO = 0.133207169842715
+   mo_energy = [-0.51992389  0.13320717  0.62513474  1.3050194   1.65013785  1.7239577
+  3.54873981]
+B2 nocc = 1  HOMO = -0.49399274235034  LUMO = 1.1393187275389
+   mo_energy = [-0.49399274  1.13931873  1.61852805  3.02140336]
+E1 = -117.41216278433545  E_coul = 35.34655973204556
+cycle= 8 E= -75.8322241172252  delta_E= -1.26e-09  |g|= 1.71e-05  |ddm|= 5.82e-05
+    CPU time for cycle= 8      1.33 sec, wall time      0.22 sec
+HOMO (B2) = -0.493992277068628  LUMO (A1) = 0.0832563149503114
+irrep_nelec = [6, 0, 2, 2]
+A1 nocc = 3  HOMO = -0.498228675121421  LUMO = 0.0832563149503114
+   mo_energy = [-20.62714902  -1.22022435  -0.49822868   0.08325631   0.63803502
+   1.20159856   1.48793724   1.59558166   2.15873448   3.054188
+   3.36110483]
+A2 nocc = 0
+   mo_energy = [1.45456964 3.02375946]
+B1 nocc = 1  HOMO = -0.519922033688965  LUMO = 0.133211358169899
+   mo_energy = [-0.51992203  0.13321136  0.62513453  1.30501993  1.65013761  1.72395722
+  3.54873965]
+B2 nocc = 1  HOMO = -0.493992277068628  LUMO = 1.13931992063031
+   mo_energy = [-0.49399228  1.13931992  1.61852794  3.02140363]
+E1 = -117.41219250357648  E_coul = 35.34658945082638
+cycle= 9 E= -75.8322241176854  delta_E= -4.6e-10  |g|= 6.55e-06  |ddm|= 4.85e-05
+    CPU time for cycle= 9      0.69 sec, wall time      0.11 sec
+HOMO (B2) = -0.493990834114216  LUMO (A1) = 0.0832556611408835
+irrep_nelec = [6, 0, 2, 2]
+A1 nocc = 3  HOMO = -0.498228315172309  LUMO = 0.0832556611408835
+   mo_energy = [-20.62714513  -1.22022256  -0.49822832   0.08325566   0.63803472
+   1.20159899   1.48793772   1.59558181   2.15873496   3.05418923
+   3.36110581]
+A2 nocc = 0
+   mo_energy = [1.45456937 3.0237606 ]
+B1 nocc = 1  HOMO = -0.519919962699046  LUMO = 0.133211765967676
+   mo_energy = [-0.51991996  0.13321177  0.62513437  1.30502087  1.65013764  1.72395721
+  3.54874069]
+B2 nocc = 1  HOMO = -0.493990834114216  LUMO = 1.13932056951351
+   mo_energy = [-0.49399083  1.13932057  1.61852793  3.02140493]
+E1 = -117.41217983218519  E_coul = 35.34657677939978
+Extra cycle  E= -75.8322241177207  delta_E= -3.53e-11  |g|= 4.03e-06  |ddm|= 8.57e-06
+    CPU time for scf_cycle     12.25 sec, wall time      1.97 sec
+    CPU time for SCF     12.25 sec, wall time      1.97 sec
+converged SCF energy = -75.8322241177207
+-75.83222411772068 -75.83222411772068
+[-20.62714513  -1.22022256  -0.51991996  -0.49822832  -0.49399083
+   0.08325566   0.13321177   0.62513437   0.63803472   1.13932057
+   1.20159899   1.30502087   1.45456937   1.48793772   1.59558181
+   1.61852793   1.65013764   1.72395721   2.15873496   3.02140493
+   3.0237606    3.05418923   3.36110581   3.54874069]
+MO conversion successful
+2.48526597023
